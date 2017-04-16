@@ -120,8 +120,8 @@ class Correios(object):
         resultado = int(resultado.childNodes[0].data)
         if resultado != 0:
             return self._getDados(tags_name, dom)
-	else:
-		return {}
+        else:
+		    return {}
     
             
 
