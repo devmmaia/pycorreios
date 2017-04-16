@@ -1,5 +1,5 @@
-import correios
-from correios import *
+from . import correios
+from .correios import *
 
 # __all__ = (correios.__all__ + cod.__all__)
 

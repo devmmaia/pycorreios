@@ -6,21 +6,29 @@ correios.py
 Api para usar dados dos Correios
 """
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 __author__ = {
     'Thiago Avelino': 'thiagoavelinoster@gmail.com',
     'Dilan Nery': 'dnerylopes@gmail.com',
 }
 
-import urllib
-import urllib2
+import sys
+
+python_version = sys.version_info[0]
+from six.moves import urllib
 import re
+
 from xml.dom import minidom
 
 try:
-    from BeautifulSoup import BeautifulSoup
+    from bs4 import BeautifulSoup
+    
+
 except ImportError:
-    raise Exception('Você não tem o modulo BeautifulSoup', ImportError)
+    try:
+        from BeautifulSoup import BeautifulSoup
+    except ImportError:
+        raise Exception('Você não tem o modulo BeautifulSoup', ImportError)
 
 
 class Correios(object):
@@ -76,8 +84,8 @@ class Correios(object):
             ('StrRetorno', toback),
         ]
 
-        url = base_url + "?" + urllib.urlencode(fields)
-        dom = minidom.parse(urllib2.urlopen(url))
+        url = base_url + "?" + urllib.parse.urlencode(fields)
+        dom = minidom.parse(urllib.request.urlopen(url))
 
         tags_name = ('MsgErro',
                      'Erro',
@@ -87,14 +95,20 @@ class Correios(object):
                      'ValorMaoPropria',
                      'ValorValorDeclarado',
                      'EntregaDomiciliar',
-                     'EntregaSabado',)
+                     'EntregaSabado',)  
+
+        # consulta de mais de um servico simultaneamente
+        qtd_servicos = len(str(cod).split(','))
+        
+        if (qtd_servicos > 1):
+            return self._dom_to_object(dom.firstChild)
 
         return self._getDados(tags_name, dom)
 
     def cep(self, numero):
         url = 'http://cep.republicavirtual.com.br/web_cep.php?formato=' \
               'xml&cep=%s' % str(numero)
-        dom = minidom.parse(urllib2.urlopen(url))
+        dom = minidom.parse(urllib.request.urlopen(url))
 
         tags_name = ('uf',
                      'cidade',
@@ -106,8 +120,10 @@ class Correios(object):
         resultado = int(resultado.childNodes[0].data)
         if resultado != 0:
             return self._getDados(tags_name, dom)
-        else:
-            return {}
+	else:
+		return {}
+    
+            
 
     def encomenda(self, numero):
         # Usado como referencia o codigo do Guilherme Chapiewski
@@ -117,25 +133,47 @@ class Correios(object):
               'P_ITEMCODE=&P_LINGUA=001&P_TESTE=&P_TIPO=001&P_COD_UNI=%s' % \
               str(numero)
 
-        html = urllib2.urlopen(url).read()
-        table = re.search(r'<table.*</TABLE>', html, re.S).group(0)
+        html = urllib.request.urlopen(url).read()
+      
+        table = re.search(b'<table.*</TABLE>', html, re.S).group(0)
 
-        parsed = BeautifulSoup(table)
+        parsed = BeautifulSoup(table, "html.parser")
+        
         dados = []
 
-        for count, tr in enumerate(parsed.table):
-            if count > 4 and str(tr).strip() != '':
+        for count, tr in enumerate(parsed.findAll('tr')):
+            if count > 0 and str(tr).strip() != '':
                 if re.match(r'\d{2}/\d{2}/\d{4} \d{2}:\d{2}',
                             tr.contents[0].string):
 
                     dados.append({
-                        'data': unicode(tr.contents[0].string),
-                        'local': unicode(tr.contents[1].string),
-                        'status': unicode(tr.contents[2].font.string)
+                        'data': tr.contents[0].string,
+                        'local': tr.contents[1].string,
+                        'status': tr.contents[2].font.string
                     })
 
                 else:
-                    dados[len(dados) - 1]['detalhes'] = unicode(
-                        tr.contents[0].string)
+                    dados[len(dados) - 1]['detalhes'] = tr.contents[0].string
 
         return dados
+
+
+    def _dom_to_object(self, dom):
+        result ={}
+        child_tags = [child for child in dom.childNodes if isinstance(child,minidom.Element)]
+        if not child_tags:
+            content = ''.join(txt.data.strip() for txt in dom.childNodes if isinstance(txt,minidom.Text))
+            return content       
+        else:
+            tags = set([tag.tagName for tag in child_tags])
+            for tagName in tags:
+                elements = dom.getElementsByTagName(tagName)
+                if len(elements) > 1:
+                    content = []
+                    for e in elements:
+                        content.append(self._dom_to_object(e))
+                        result[dom.tagName] = content
+                else:
+                    content = self._dom_to_object(elements[0])
+                    result[tagName]=content
+        return result
